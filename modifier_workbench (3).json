@@ -1,0 +1,50 @@
+package com.modifierworkbench.network;
+
+import com.modifierworkbench.blockentity.ModifierWorkbenchBlockEntity;
+import com.modifierworkbench.handler.ModEvents;
+import com.modifierworkbench.menu.ModifierWorkbenchMenu;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+
+import static com.modifierworkbench.ModifierWorkbenchMod.MOD_ID;
+
+/**
+ * Packet sent from client → server when the player clicks "Apply" in the GUI.
+ */
+public record ApplyModifierPacket(BlockPos pos) implements CustomPacketPayload {
+
+    public static final CustomPacketPayload.Type<ApplyModifierPacket> TYPE =
+            new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(MOD_ID, "apply_modifier"));
+
+    public static final StreamCodec<FriendlyByteBuf, ApplyModifierPacket> CODEC =
+            StreamCodec.of(
+                    (buf, pkt) -> buf.writeBlockPos(pkt.pos),
+                    buf -> new ApplyModifierPacket(buf.readBlockPos())
+            );
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
+    }
+
+    public static void handle(ApplyModifierPacket packet, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (context.player() instanceof ServerPlayer serverPlayer) {
+                BlockEntity be = serverPlayer.level().getBlockEntity(packet.pos);
+                if (be instanceof ModifierWorkbenchBlockEntity workbench) {
+                    // Ensure player actually has this menu open
+                    if (serverPlayer.containerMenu instanceof ModifierWorkbenchMenu menu
+                            && menu.getBlockEntity() == workbench) {
+                        ModEvents.applyModifier(serverPlayer, workbench);
+                    }
+                }
+            }
+        });
+    }
+}

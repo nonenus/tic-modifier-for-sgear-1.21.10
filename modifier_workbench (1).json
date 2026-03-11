@@ -1,0 +1,106 @@
+package com.modifierworkbench.menu;
+
+import com.modifierworkbench.blockentity.ModifierWorkbenchBlockEntity;
+import com.modifierworkbench.registry.ModMenuTypes;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import org.jetbrains.annotations.NotNull;
+
+public class ModifierWorkbenchMenu extends AbstractContainerMenu {
+
+    private final ModifierWorkbenchBlockEntity blockEntity;
+    public final BlockPos blockPos;
+
+    // Client-side constructor (from network)
+    public ModifierWorkbenchMenu(int id, Inventory playerInv, FriendlyByteBuf buf) {
+        this(id, playerInv, (ModifierWorkbenchBlockEntity) playerInv.player.level()
+                .getBlockEntity(buf.readBlockPos()), buf.readBlockPos());
+    }
+
+    // Server-side constructor
+    public ModifierWorkbenchMenu(int id, Inventory playerInv, ModifierWorkbenchBlockEntity be, BlockPos pos) {
+        super(ModMenuTypes.MODIFIER_WORKBENCH_MENU.get(), id);
+        this.blockEntity = be;
+        this.blockPos = pos;
+
+        checkContainerSize(be, ModifierWorkbenchBlockEntity.TOTAL_SLOTS);
+
+        // Slot 0: Silent Gear item (top center)
+        addSlot(new Slot(be, ModifierWorkbenchBlockEntity.GEAR_SLOT, 80, 20));
+
+        // Slots 1-5: Material input slots (row)
+        for (int i = 0; i < 5; i++) {
+            addSlot(new Slot(be, ModifierWorkbenchBlockEntity.MAT_SLOT_START + i, 17 + i * 18, 60));
+        }
+
+        // Slot 6: Output / feedback slot (read-only, populated by server)
+        addSlot(new Slot(be, ModifierWorkbenchBlockEntity.OUTPUT_SLOT, 152, 20) {
+            @Override
+            public boolean mayPlace(@NotNull ItemStack stack) {
+                return false;
+            }
+        });
+
+        // Player inventory (rows 0-2)
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 9; col++) {
+                addSlot(new Slot(playerInv, col + row * 9 + 9, 8 + col * 18, 110 + row * 18));
+            }
+        }
+
+        // Player hotbar
+        for (int col = 0; col < 9; col++) {
+            addSlot(new Slot(playerInv, col, 8 + col * 18, 168));
+        }
+    }
+
+    public ModifierWorkbenchBlockEntity getBlockEntity() {
+        return blockEntity;
+    }
+
+    @Override
+    public @NotNull ItemStack quickMoveStack(@NotNull Player player, int index) {
+        ItemStack copy = ItemStack.EMPTY;
+        Slot slot = slots.get(index);
+
+        if (slot.hasItem()) {
+            ItemStack stack = slot.getItem();
+            copy = stack.copy();
+
+            int containerSize = ModifierWorkbenchBlockEntity.TOTAL_SLOTS;
+            int playerStart = containerSize;
+            int playerEnd = playerStart + 36;
+
+            if (index < containerSize) {
+                // From workbench -> player
+                if (!moveItemStackTo(stack, playerStart, playerEnd, true)) {
+                    return ItemStack.EMPTY;
+                }
+            } else {
+                // From player -> workbench
+                if (!moveItemStackTo(stack, 0, containerSize - 1, false)) {
+                    return ItemStack.EMPTY;
+                }
+            }
+
+            if (stack.isEmpty()) {
+                slot.set(ItemStack.EMPTY);
+            } else {
+                slot.setChanged();
+            }
+        }
+
+        return copy;
+    }
+
+    @Override
+    public boolean stillValid(@NotNull Player player) {
+        return blockEntity.stillValid(player);
+    }
+}
